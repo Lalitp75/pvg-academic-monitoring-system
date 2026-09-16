@@ -5,6 +5,7 @@ import { users } from "@/db/schema";
 import { ADMIN_EMAIL, createSession, hashPassword, sessionCookie } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
+ try {
   const body = await request.json();
   const name = String(body.name ?? "").trim();
   const email = String(body.email ?? "").trim().toLowerCase();
@@ -18,4 +19,8 @@ export async function POST(request: NextRequest) {
   if (!isAdmin) return NextResponse.json({ status: "pending", message: "Registration submitted. Login will be available after Admin approval." }, { status: 201 });
   const session = await createSession(created.id);
   const response = NextResponse.json({ status: "approved" }, { status: 201 }); response.cookies.set(sessionCookie(session.token, session.expiresAt)); return response;
+ } catch (error) {
+  console.error("signup failed", error);
+  return NextResponse.json({ error: error instanceof Error ? `Registration failed: ${error.message}` : "Registration failed. Please try again." }, { status: 500 });
+ }
 }

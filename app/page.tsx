@@ -48,6 +48,7 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<"login"|"signup">("login");
   const [authForm, setAuthForm] = useState({name:"",email:"",department:departments[0],password:""});
   const [authMessage, setAuthMessage] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [form, setForm] = useState(initialForm);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -83,12 +84,17 @@ export default function Home() {
   useEffect(()=>{loadStaff();},[loadStaff]);
 
   async function authenticate(event: FormEvent) {
-    event.preventDefault(); setAuthMessage("");
-    const response=await fetch(`/api/auth/${authMode}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(authForm)});
-    const data=await response.json();
-    if(!response.ok){setAuthMessage(data.error||"Unable to continue.");return;}
-    if(data.status==="pending"){setAuthMessage(data.message);setAuthMode("login");return;}
-    const me=await fetch("/api/auth/me"); if(me.ok)setUser(await me.json());
+    event.preventDefault(); setAuthMessage(""); setAuthSubmitting(true);
+    try {
+      const response=await fetch(`/api/auth/${authMode}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(authForm)});
+      const data=await response.json().catch(()=>({error:"The server returned an invalid response."}));
+      if(!response.ok){setAuthMessage(data.error||"Unable to continue.");return;}
+      if(data.status==="pending"){setAuthMessage(data.message);setAuthMode("login");return;}
+      const me=await fetch("/api/auth/me",{cache:"no-store"});
+      if(!me.ok){setAuthMessage("Account was created, but automatic login failed. Please use Sign in.");setAuthMode("login");return;}
+      setUser(await me.json());
+    } catch { setAuthMessage("Unable to connect. Please refresh the page and try again."); }
+    finally { setAuthSubmitting(false); }
   }
 
   async function logout(){await fetch("/api/auth/logout",{method:"POST"});setUser(null);setEntries([]);}
@@ -183,7 +189,7 @@ export default function Home() {
       {authMode==="signup"&&<><Label>Department</Label><NativeSelect className="w-full" value={authForm.department} onChange={e=>setAuthForm({...authForm,department:e.target.value})}>{departments.map(d=><NativeSelectOption key={d}>{d}</NativeSelectOption>)}</NativeSelect></>}
       <Label>Password</Label><Input type="password" minLength={8} required value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})}/>
       {authMessage&&<div className="notice error">{authMessage}</div>}
-      <Button size="lg" type="submit"><ShieldCheck/>{authMode==="login"?"Secure Login":"Submit Registration"}</Button>
+      <Button size="lg" type="submit" disabled={authSubmitting}>{authSubmitting?<Loader2 className="animate-spin"/>:<ShieldCheck/>}{authSubmitting?"Please wait…":authMode==="login"?"Secure Login":"Submit Registration"}</Button>
     </form>
     <button className="auth-switch" onClick={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthMessage("");}}>{authMode==="login"?"New faculty member? Create account":"Already registered? Sign in"}</button>
     <small>Super Admin: hod_etc@pvgcoenashik.org</small>
