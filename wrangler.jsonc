@@ -8,6 +8,13 @@
     "directory": "dist/client",
     "binding": "ASSETS"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pvg-academic-monitoring-db",
+      "database_id": "455e7d7b-47b7-41e5-8d9e-111a5c4a3567"
+    }
+  ],
   "build": {
     "command": "pnpm build"
   },
