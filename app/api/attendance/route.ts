@@ -1,12 +1,15 @@
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { attendanceEntries } from "@/db/schema";
+import { attendanceEntries, attendanceOwnership } from "@/db/schema";
+import { currentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await currentUser(request);
+    if (!user) return NextResponse.json({ error: "Please log in." }, { status: 401 });
     const params = request.nextUrl.searchParams;
     const filters = [];
     const department = params.get("department");
@@ -15,7 +18,14 @@ export async function GET(request: NextRequest) {
     if (department && department !== "All Departments") filters.push(eq(attendanceEntries.department, department));
     if (from) filters.push(gte(attendanceEntries.lectureDate, from));
     if (to) filters.push(lte(attendanceEntries.lectureDate, to));
-    const rows = await getDb().select().from(attendanceEntries)
+    if (user.role !== "admin") filters.push(eq(attendanceOwnership.userId, user.id));
+    const rows = await getDb().select({
+      id: attendanceEntries.id, lectureDate: attendanceEntries.lectureDate, facultyName: attendanceEntries.facultyName,
+      department: attendanceEntries.department, className: attendanceEntries.className, division: attendanceEntries.division,
+      subjectName: attendanceEntries.subjectName, sessionType: attendanceEntries.sessionType, periodTime: attendanceEntries.periodTime,
+      totalStudents: attendanceEntries.totalStudents, presentStudents: attendanceEntries.presentStudents, remarks: attendanceEntries.remarks,
+      createdAt: attendanceEntries.createdAt,
+    }).from(attendanceEntries).leftJoin(attendanceOwnership, eq(attendanceOwnership.entryId, attendanceEntries.id))
       .where(filters.length ? and(...filters) : undefined)
       .orderBy(desc(attendanceEntries.lectureDate), desc(attendanceEntries.id));
     return NextResponse.json(rows);
@@ -27,6 +37,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await currentUser(request);
+    if (!user) return NextResponse.json({ error: "Please log in." }, { status: 401 });
     const body = await request.json();
     const required = ["lectureDate", "facultyName", "department", "className", "division", "subjectName", "sessionType", "periodTime"];
     if (required.some((key) => !String(body[key] ?? "").trim())) {
@@ -39,8 +51,8 @@ export async function POST(request: NextRequest) {
     }
     const [created] = await getDb().insert(attendanceEntries).values({
       lectureDate: body.lectureDate,
-      facultyName: body.facultyName.trim(),
-      department: body.department,
+      facultyName: user.role === "staff" ? user.name : body.facultyName.trim(),
+      department: user.role === "staff" ? user.department : body.department,
       className: body.className,
       division: body.division.trim(),
       subjectName: body.subjectName.trim(),
@@ -51,6 +63,7 @@ export async function POST(request: NextRequest) {
       remarks: String(body.remarks ?? "").trim(),
       createdAt: new Date().toISOString(),
     }).returning();
+    await getDb().insert(attendanceOwnership).values({ entryId: created.id, userId: user.id });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     console.error("attendance POST failed", error);

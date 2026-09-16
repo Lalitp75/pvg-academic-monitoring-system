@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart3, BookOpenCheck, CalendarDays, Download, Loader2, RefreshCw, Save, Search, Users } from "lucide-react";
+import { BarChart3, BookOpenCheck, CalendarDays, Download, Loader2, LogOut, RefreshCw, Save, Search, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,8 @@ type Entry = {
   className: string; division: string; subjectName: string; sessionType: string;
   periodTime: string; totalStudents: number; presentStudents: number; remarks: string;
 };
+type User = { id:number; name:string; email:string; department:string; role:"admin"|"staff"; status:string };
+type StaffUser = { id:number; name:string; email:string; department:string; status:string };
 
 type ModelContext = { registerTool: (tool: Record<string, unknown>, options?: { signal?: AbortSignal }) => void | Promise<void> };
 
@@ -41,6 +43,12 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
 }
 
 export default function Home() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<"login"|"signup">("login");
+  const [authForm, setAuthForm] = useState({name:"",email:"",department:departments[0],password:""});
+  const [authMessage, setAuthMessage] = useState("");
+  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [form, setForm] = useState(initialForm);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [department, setDepartment] = useState("All Departments");
@@ -51,7 +59,10 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
+  useEffect(()=>{ fetch("/api/auth/me",{cache:"no-store"}).then(async r=>{if(r.ok)setUser(await r.json());}).finally(()=>setAuthLoading(false)); },[]);
+
   const loadEntries = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
     try {
       const p = new URLSearchParams();
@@ -65,9 +76,23 @@ export default function Home() {
     } catch (error) {
       setNotice({ kind: "error", text: error instanceof Error ? error.message : "Unable to load records." });
     } finally { setLoading(false); }
-  }, [department, from, to]);
+  }, [department, from, to, user]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
+  const loadStaff = useCallback(async()=>{ if(user?.role!=="admin") return; const r=await fetch("/api/admin/users",{cache:"no-store"}); if(r.ok)setStaffUsers(await r.json()); },[user]);
+  useEffect(()=>{loadStaff();},[loadStaff]);
+
+  async function authenticate(event: FormEvent) {
+    event.preventDefault(); setAuthMessage("");
+    const response=await fetch(`/api/auth/${authMode}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(authForm)});
+    const data=await response.json();
+    if(!response.ok){setAuthMessage(data.error||"Unable to continue.");return;}
+    if(data.status==="pending"){setAuthMessage(data.message);setAuthMode("login");return;}
+    const me=await fetch("/api/auth/me"); if(me.ok)setUser(await me.json());
+  }
+
+  async function logout(){await fetch("/api/auth/logout",{method:"POST"});setUser(null);setEntries([]);}
+  async function updateStaff(id:number,status:"approved"|"inactive"){await fetch("/api/admin/users",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status})});await loadStaff();}
 
   useEffect(() => {
     const context = (document as Document & { modelContext?: ModelContext }).modelContext;
@@ -119,7 +144,7 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       setNotice({ kind: "ok", text: "Lecture attendance saved successfully." });
-      setForm({ ...initialForm, lectureDate: form.lectureDate, facultyName: form.facultyName, department: form.department });
+      setForm({ ...initialForm, lectureDate: form.lectureDate, facultyName: user?.name || form.facultyName, department: user?.department || form.department });
       await loadEntries();
     } catch (error) { setNotice({ kind: "error", text: error instanceof Error ? error.message : "Entry could not be saved." }); }
     finally { setSaving(false); }
@@ -146,12 +171,30 @@ export default function Home() {
 
   const set = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
+  useEffect(()=>{if(user?.role==="staff")setForm(current=>({...current,facultyName:user.name,department:user.department}));},[user]);
+
+  if(authLoading) return <main className="auth-page"><Loader2 className="animate-spin"/> Loading secure portal…</main>;
+  if(!user) return <main className="auth-page"><section className="auth-card">
+    <img className="auth-logo" src="/pvgcoenashik-logo.png" alt="PVGCOE & SSDIOM"/><p className="eyebrow">Secure Academic Portal</p><h1>PVG&apos;s Academic Monitoring System</h1>
+    <p>{authMode==="login"?"Sign in to record and review academic sessions.":"Create a faculty account. Admin approval is required."}</p>
+    <form onSubmit={authenticate} className="auth-form">
+      {authMode==="signup"&&<><Label>Full Name</Label><Input required value={authForm.name} onChange={e=>setAuthForm({...authForm,name:e.target.value})}/></>}
+      <Label>Official Email</Label><Input type="email" required value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})}/>
+      {authMode==="signup"&&<><Label>Department</Label><NativeSelect className="w-full" value={authForm.department} onChange={e=>setAuthForm({...authForm,department:e.target.value})}>{departments.map(d=><NativeSelectOption key={d}>{d}</NativeSelectOption>)}</NativeSelect></>}
+      <Label>Password</Label><Input type="password" minLength={8} required value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})}/>
+      {authMessage&&<div className="notice error">{authMessage}</div>}
+      <Button size="lg" type="submit"><ShieldCheck/>{authMode==="login"?"Secure Login":"Submit Registration"}</Button>
+    </form>
+    <button className="auth-switch" onClick={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthMessage("");}}>{authMode==="login"?"New faculty member? Create account":"Already registered? Sign in"}</button>
+    <small>Super Admin: hod_etc@pvgcoenashik.org</small>
+  </section></main>;
+
   return (
     <main className="app-shell">
       <header className="topbar">
         <img className="college-logo" src="/pvgcoenashik-logo.png" alt="PVGCOE & SSDIOM, Nashik" />
         <div className="system-title"><p className="eyebrow">Centralized Academic Records</p><h1>PVG&apos;s Academic Monitoring System</h1></div>
-        <div className="pilot-pill">College Pilot</div>
+        <div className="user-area"><span><strong>{user.name}</strong><small>{user.role==="admin"?"Super Admin":user.department}</small></span><Button variant="outline" size="sm" onClick={logout}><LogOut/>Logout</Button></div>
       </header>
 
       <section className="intro-row">
@@ -165,13 +208,17 @@ export default function Home() {
         <div className="stat-card accent"><span><BarChart3 /></span><div><p>Average Attendance</p><strong>{stats.percentage}%</strong></div></div>
       </section>
 
+      {user.role==="admin"&&<section className="panel approvals-panel"><div className="panel-heading"><div><p className="section-kicker">Access control</p><h3>Faculty Account Approvals</h3></div><span>{staffUsers.filter(s=>s.status==="pending").length} pending</span></div>
+        <div className="approval-list">{staffUsers.length?staffUsers.map(s=><div className="approval-row" key={s.id}><div><strong>{s.name}</strong><small>{s.email} · {s.department}</small></div><span className={`account-status ${s.status}`}>{s.status}</span><div><Button size="sm" onClick={()=>updateStaff(s.id,"approved")}>Approve</Button><Button size="sm" variant="outline" onClick={()=>updateStaff(s.id,"inactive")}>Deactivate</Button></div></div>):<p className="empty">No faculty registrations yet.</p>}</div>
+      </section>}
+
       <div className="workspace-grid">
         <section className="panel entry-panel">
           <div className="panel-heading"><div><p className="section-kicker">Faculty entry</p><h3>Add Lecture / Practical</h3></div><span>All fields marked * are required</span></div>
           <form onSubmit={submit} className="entry-form">
             <Field label="Date *"><Input type="date" required value={form.lectureDate} onChange={e=>set("lectureDate",e.target.value)} /></Field>
-            <Field label="Faculty Name *"><Input required placeholder="Enter full name" value={form.facultyName} onChange={e=>set("facultyName",e.target.value)} /></Field>
-            <Field label="Department *" wide><NativeSelect required className="w-full" value={form.department} onChange={e=>set("department",e.target.value)}>{departments.map(d=><NativeSelectOption key={d}>{d}</NativeSelectOption>)}</NativeSelect></Field>
+            <Field label="Faculty Name *"><Input required disabled={user.role==="staff"} placeholder="Enter full name" value={form.facultyName} onChange={e=>set("facultyName",e.target.value)} /></Field>
+            <Field label="Department *" wide><NativeSelect required disabled={user.role==="staff"} className="w-full" value={form.department} onChange={e=>set("department",e.target.value)}>{departments.map(d=><NativeSelectOption key={d}>{d}</NativeSelectOption>)}</NativeSelect></Field>
             <Field label="Class *"><NativeSelect className="w-full" value={form.className} onChange={e=>set("className",e.target.value)}>{["FE","SE","TE","BE"].map(v=><NativeSelectOption key={v}>{v}</NativeSelectOption>)}</NativeSelect></Field>
             <Field label="Division *"><Input required value={form.division} onChange={e=>set("division",e.target.value)} /></Field>
             <Field label="Subject Name *" wide><Input required placeholder="e.g. Database Management Systems" value={form.subjectName} onChange={e=>set("subjectName",e.target.value)} /></Field>
@@ -186,7 +233,7 @@ export default function Home() {
         </section>
 
         <section className="panel records-panel">
-          <div className="panel-heading"><div><p className="section-kicker">Centralized register</p><h3>Attendance Records</h3></div><Button variant="outline" onClick={exportExcel} disabled={!filtered.length}><Download/>Download Formatted Excel</Button></div>
+          <div className="panel-heading"><div><p className="section-kicker">{user.role==="admin"?"Centralized register":"My register"}</p><h3>{user.role==="admin"?"All Attendance Records":"My Attendance Records"}</h3></div><Button variant="outline" onClick={exportExcel} disabled={!filtered.length}><Download/>Download Formatted Excel</Button></div>
           <div className="filters">
             <div className="search-box"><Search/><Input aria-label="Search records" placeholder="Search faculty, subject or class" value={query} onChange={e=>setQuery(e.target.value)} /></div>
             <NativeSelect className="w-full" value={department} onChange={e=>setDepartment(e.target.value)}><NativeSelectOption>All Departments</NativeSelectOption>{departments.map(d=><NativeSelectOption key={d}>{d}</NativeSelectOption>)}</NativeSelect>
