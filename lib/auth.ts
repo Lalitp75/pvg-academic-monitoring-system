@@ -28,6 +28,12 @@ export async function hashToken(token: string) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))));
 }
 
+export function createRecoveryCode() {
+  const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";const bytes=crypto.getRandomValues(new Uint8Array(12));
+  const raw=Array.from(bytes,b=>chars[b%chars.length]).join("");
+  return `PVG-${raw.slice(0,4)}-${raw.slice(4,8)}-${raw.slice(8,12)}`;
+}
+
 export async function currentUser(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return null;
