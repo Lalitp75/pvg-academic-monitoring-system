@@ -50,3 +50,8 @@ export const attendanceOwnership = sqliteTable("attendance_ownership", {
   entryId: integer("entry_id").primaryKey().references(() => attendanceEntries.id, { onDelete: "cascade" }),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
 });
+
+export const leaderboardHiddenEntries = sqliteTable("leaderboard_hidden_entries", {
+  entryId: integer("entry_id").primaryKey().references(() => attendanceEntries.id, { onDelete: "cascade" }),
+  hiddenAt: text("hidden_at").notNull(),
+});
