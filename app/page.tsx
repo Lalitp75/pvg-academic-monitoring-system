@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, BookOpenCheck, CalendarDays, Download, Loader2, LogOut, Pencil, RefreshCw, Save, Search, ShieldCheck, Trash2, Trophy, Users, X } from "lucide-react";
+import { BookOpenCheck, CalendarDays, ChevronDown, ChevronUp, Download, Loader2, LogOut, Pencil, RefreshCw, Save, Search, ShieldCheck, Trash2, Trophy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,14 +13,14 @@ const departments = [
 ];
 
 const sessionSlots = {
-  Theory: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
-  Practical: ["8:00 AM - 10:00 AM", "10:15 AM - 12:15 PM", "2:00 PM - 4:00 PM"],
-  Tutorial: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
+  Theory: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
+  Practical: ["8:00 AM - 10:00 AM", "9:00 AM - 11:00 AM", "10:15 AM - 12:15 PM", "11:15 AM - 1:15 PM", "2:00 PM - 4:00 PM"],
+  Tutorial: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
 };
 const saturdaySlots = {
-  Theory: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM"],
-  Practical: ["8:00 AM - 10:00 AM", "10:15 AM - 12:15 PM"],
-  Tutorial: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM"],
+  Theory: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
+  Practical: ["8:00 AM - 10:00 AM", "9:00 AM - 11:00 AM", "10:15 AM - 12:15 PM", "11:15 AM - 1:15 PM", "2:00 PM - 4:00 PM"],
+  Tutorial: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
 };
 
 type Entry = {
@@ -58,6 +58,7 @@ export default function Home() {
   const [recoveryNotice, setRecoveryNotice] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardData>({fromDate:localDate(),toDate:localDate(),entries:[]});
   const entryPanelRef = useRef<HTMLElement>(null);
   const [editingId, setEditingId] = useState<number|null>(null);
@@ -151,12 +152,6 @@ export default function Home() {
     return entries.filter((e) => [e.facultyName, e.subjectName, e.className, e.division, e.sessionType].some(v => v.toLowerCase().includes(needle)));
   }, [entries, query]);
 
-  const stats = useMemo(() => {
-    const total = filtered.reduce((sum, e) => sum + e.totalStudents, 0);
-    const present = filtered.reduce((sum, e) => sum + e.presentStudents, 0);
-    return { sessions: filtered.length, present, percentage: total ? Math.round((present / total) * 100) : 0 };
-  }, [filtered]);
-
   async function submit(event: FormEvent) {
     event.preventDefault(); setNotice(null);
     const total = Number(form.totalStudents), present = Number(form.presentStudents);
@@ -234,19 +229,13 @@ export default function Home() {
         <div className="date-chip"><CalendarDays /><span>Today<br/><strong>{new Date().toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" })}</strong></span></div>
       </section>
 
-      <section className="stats-grid" aria-label="Attendance summary">
-        <div className="stat-card"><span><BookOpenCheck /></span><div><p>Sessions</p><strong>{stats.sessions}</strong></div></div>
-        <div className="stat-card"><span><Users /></span><div><p>Total Present</p><strong>{stats.present}</strong></div></div>
-        <div className="stat-card accent"><span><BarChart3 /></span><div><p>Average Attendance</p><strong>{stats.percentage}%</strong></div></div>
-      </section>
-
       <section className="leaderboard-shell">
         <div className="leaderboard-title"><div><p className="section-kicker">Live performance · latest two days</p><h3><Trophy/> Attendance Leaderboard</h3></div><span>{new Date(leaderboard.fromDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short"})} – {new Date(leaderboard.toDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} · Auto-refresh</span></div>
         <div className="leaderboard-grid">{(["Theory","Practical"] as const).map(type=><div className="leader-card" key={type}><h4>{type} Leaderboard</h4><div className="leader-table"><table><thead><tr><th>#</th><th>Faculty / Date · Department · Class</th><th>Session</th><th>Attendance</th>{user.role==="admin"&&<th>Action</th>}</tr></thead><tbody>{leaderboard.entries.filter(e=>e.sessionType===type).map((e,i)=><tr key={e.id}><td><span className={`rank rank-${i+1}`}>{i+1}</span></td><td><strong>{e.facultyName}</strong><small>{new Date(e.lectureDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} · {e.department} · {e.className}-{e.division}</small></td><td><strong>{e.subjectName}</strong><small>{e.periodTime}</small></td><td><strong>{Math.round(e.presentStudents/e.totalStudents*100)}%</strong><small>{e.presentStudents}/{e.totalStudents}</small></td>{user.role==="admin"&&<td><Button size="icon-sm" variant="outline" title="Remove only from leaderboard" onClick={()=>hideLeaderboardEntry(e.id)}><Trash2/></Button></td>}</tr>)}{!leaderboard.entries.some(e=>e.sessionType===type)&&<tr><td colSpan={user.role==="admin"?5:4} className="leader-empty">No {type.toLowerCase()} entries in the latest two days.</td></tr>}</tbody></table></div></div>)}</div>
       </section>
 
-      {user.role==="admin"&&<section className="panel approvals-panel"><div className="panel-heading"><div><p className="section-kicker">Access control</p><h3>Faculty Account Approvals</h3></div><span>{staffUsers.filter(s=>s.status==="pending").length} pending</span></div>
-        <div className="approval-list">{staffUsers.length?staffUsers.map(s=><div className="approval-row" key={s.id}><div><strong>{s.name}</strong><small>{s.email} · {s.department}</small></div><span className={`account-status ${s.status}`}>{s.status}</span><div><Button size="sm" onClick={()=>updateStaff(s.id,"approved")}>Approve</Button><Button size="sm" variant="outline" onClick={()=>generateStaffRecoveryCode(s.id,s.name)}>Recovery Code</Button><Button size="sm" variant="outline" onClick={()=>updateStaff(s.id,"inactive")}>Deactivate</Button></div></div>):<p className="empty">No faculty registrations yet.</p>}</div>
+      {user.role==="admin"&&<section className="panel approvals-panel"><div className="panel-heading approvals-heading"><div><p className="section-kicker">Access control</p><h3>Faculty Account Approvals</h3></div><div className="approvals-controls"><span>{staffUsers.filter(s=>s.status==="pending").length} pending</span><Button type="button" size="sm" variant="outline" onClick={()=>setApprovalsOpen(open=>!open)} aria-expanded={approvalsOpen}>{approvalsOpen?<><ChevronUp/>Minimize</>:<><ChevronDown/>View Approvals</>}</Button></div></div>
+        {approvalsOpen&&<div className="approval-list">{staffUsers.length?staffUsers.map(s=><div className="approval-row" key={s.id}><div><strong>{s.name}</strong><small>{s.email} · {s.department}</small></div><span className={`account-status ${s.status}`}>{s.status}</span><div><Button size="sm" onClick={()=>updateStaff(s.id,"approved")}>Approve</Button><Button size="sm" variant="outline" onClick={()=>generateStaffRecoveryCode(s.id,s.name)}>Recovery Code</Button><Button size="sm" variant="outline" onClick={()=>updateStaff(s.id,"inactive")}>Deactivate</Button></div></div>):<p className="empty">No faculty registrations yet.</p>}</div>}
       </section>}
 
       <div className="workspace-grid">
