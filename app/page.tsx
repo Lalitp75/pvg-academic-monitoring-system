@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart3, BookOpenCheck, CalendarDays, Download, Loader2, LogOut, RefreshCw, Save, Search, ShieldCheck, Users } from "lucide-react";
+import { BarChart3, BookOpenCheck, CalendarDays, Download, Loader2, LogOut, Pencil, RefreshCw, Save, Search, ShieldCheck, Trash2, Trophy, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,12 @@ const departments = [
 const sessionSlots = {
   Theory: ["9:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
   Practical: ["9:00 AM - 11:00 AM", "11:15 AM - 1:15 PM", "2:00 PM - 4:00 PM"],
+  Tutorial: ["9:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
+};
+const saturdaySlots = {
+  Theory: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM"],
+  Practical: ["8:00 AM - 10:00 AM", "10:15 AM - 12:15 PM"],
+  Tutorial: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM"],
 };
 
 type Entry = {
@@ -24,6 +30,7 @@ type Entry = {
 };
 type User = { id:number; name:string; email:string; department:string; role:"admin"|"staff"; status:string };
 type StaffUser = { id:number; name:string; email:string; department:string; status:string };
+type LeaderboardData = { date:string; entries:Entry[]; departments:{department:string;sessions:number;present:number;total:number;percentage:number}[] };
 
 type ModelContext = { registerTool: (tool: Record<string, unknown>, options?: { signal?: AbortSignal }) => void | Promise<void> };
 
@@ -50,6 +57,8 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardData>({date:localDate(),entries:[],departments:[]});
+  const [editingId, setEditingId] = useState<number|null>(null);
   const [form, setForm] = useState(initialForm);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [department, setDepartment] = useState("All Departments");
@@ -82,6 +91,8 @@ export default function Home() {
   useEffect(() => { loadEntries(); }, [loadEntries]);
   const loadStaff = useCallback(async()=>{ if(user?.role!=="admin") return; const r=await fetch("/api/admin/users",{cache:"no-store"}); if(r.ok)setStaffUsers(await r.json()); },[user]);
   useEffect(()=>{loadStaff();},[loadStaff]);
+  const loadLeaderboard=useCallback(async()=>{if(!user)return;const r=await fetch(`/api/leaderboard?date=${localDate()}`,{cache:"no-store"});if(r.ok)setLeaderboard(await r.json());},[user]);
+  useEffect(()=>{loadLeaderboard();const timer=setInterval(loadLeaderboard,60000);return()=>clearInterval(timer);},[loadLeaderboard]);
 
   async function authenticate(event: FormEvent) {
     event.preventDefault(); setAuthMessage(""); setAuthSubmitting(true);
@@ -146,12 +157,13 @@ export default function Home() {
     if (present > total) { setNotice({ kind: "error", text: "Present students cannot be more than total students." }); return; }
     setSaving(true);
     try {
-      const response = await fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const response = await fetch(editingId?`/api/attendance/${editingId}`:"/api/attendance", { method: editingId?"PATCH":"POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      setNotice({ kind: "ok", text: "Lecture attendance saved successfully." });
+      setNotice({ kind: "ok", text: editingId?"Attendance entry updated successfully.":"Attendance entry saved successfully." });
+      setEditingId(null);
       setForm({ ...initialForm, lectureDate: form.lectureDate, facultyName: user?.name || form.facultyName, department: user?.department || form.department });
-      await loadEntries();
+      await Promise.all([loadEntries(),loadLeaderboard()]);
     } catch (error) { setNotice({ kind: "error", text: error instanceof Error ? error.message : "Entry could not be saved." }); }
     finally { setSaving(false); }
   }
@@ -176,6 +188,10 @@ export default function Home() {
   }
 
   const set = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const activeSlots=(date:string,type:string)=>new Date(date+"T00:00:00").getDay()===6?saturdaySlots[type as keyof typeof saturdaySlots]:sessionSlots[type as keyof typeof sessionSlots];
+  function startEdit(entry:Entry){setEditingId(entry.id);setForm({lectureDate:entry.lectureDate,facultyName:entry.facultyName,department:entry.department,className:entry.className,division:entry.division,subjectName:entry.subjectName,sessionType:entry.sessionType,periodTime:entry.periodTime,totalStudents:String(entry.totalStudents),presentStudents:String(entry.presentStudents),remarks:entry.remarks});window.scrollTo({top:420,behavior:"smooth"});}
+  function cancelEdit(){setEditingId(null);setForm({...initialForm,facultyName:user?.name||"",department:user?.department||departments[0]});setNotice(null);}
+  async function deleteEntry(id:number){if(!window.confirm("Are you sure you want to delete this attendance entry?"))return;const r=await fetch(`/api/attendance/${id}`,{method:"DELETE"});const data=await r.json();if(!r.ok){setNotice({kind:"error",text:data.error||"Delete failed."});return;}await Promise.all([loadEntries(),loadLeaderboard()]);}
 
   useEffect(()=>{if(user?.role==="staff")setForm(current=>({...current,facultyName:user.name,department:user.department}));},[user]);
 
@@ -214,27 +230,33 @@ export default function Home() {
         <div className="stat-card accent"><span><BarChart3 /></span><div><p>Average Attendance</p><strong>{stats.percentage}%</strong></div></div>
       </section>
 
+      <section className="leaderboard-shell">
+        <div className="leaderboard-title"><div><p className="section-kicker">Live daily performance</p><h3><Trophy/> Today&apos;s Attendance Leaderboard</h3></div><span>{new Date(leaderboard.date+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"})} · Auto-refresh</span></div>
+        <div className="leaderboard-grid">{(["Theory","Practical","Tutorial"] as const).map(type=><div className="leader-card" key={type}><h4>{type} Leaderboard</h4><div className="leader-table"><table><thead><tr><th>#</th><th>Faculty / Department</th><th>Session</th><th>Attendance</th></tr></thead><tbody>{leaderboard.entries.filter(e=>e.sessionType===type).map((e,i)=><tr key={e.id}><td><span className={`rank rank-${i+1}`}>{i+1}</span></td><td><strong>{e.facultyName}</strong><small>{e.department} · {e.className}-{e.division}</small></td><td><strong>{e.subjectName}</strong><small>{e.periodTime}</small></td><td><strong>{Math.round(e.presentStudents/e.totalStudents*100)}%</strong><small>{e.presentStudents}/{e.totalStudents}</small></td></tr>)}{!leaderboard.entries.some(e=>e.sessionType===type)&&<tr><td colSpan={4} className="leader-empty">No {type.toLowerCase()} entries today.</td></tr>}</tbody></table></div></div>)}</div>
+        <div className="department-board"><h4>Today&apos;s Department Attendance Ranking</h4><div className="department-row header"><span>Rank</span><span>Department</span><span>Sessions</span><span>Present / Total</span><span>Attendance</span></div>{leaderboard.departments.map((d,i)=><div className="department-row" key={d.department}><span><b className={`rank rank-${i+1}`}>{i+1}</b></span><strong>{d.department}</strong><span>{d.sessions}</span><span>{d.present}/{d.total}</span><strong>{d.percentage}%</strong></div>)}{!leaderboard.departments.length&&<p className="leader-empty">Department ranking will appear after today&apos;s first entry.</p>}</div>
+      </section>
+
       {user.role==="admin"&&<section className="panel approvals-panel"><div className="panel-heading"><div><p className="section-kicker">Access control</p><h3>Faculty Account Approvals</h3></div><span>{staffUsers.filter(s=>s.status==="pending").length} pending</span></div>
         <div className="approval-list">{staffUsers.length?staffUsers.map(s=><div className="approval-row" key={s.id}><div><strong>{s.name}</strong><small>{s.email} · {s.department}</small></div><span className={`account-status ${s.status}`}>{s.status}</span><div><Button size="sm" onClick={()=>updateStaff(s.id,"approved")}>Approve</Button><Button size="sm" variant="outline" onClick={()=>updateStaff(s.id,"inactive")}>Deactivate</Button></div></div>):<p className="empty">No faculty registrations yet.</p>}</div>
       </section>}
 
       <div className="workspace-grid">
         <section className="panel entry-panel">
-          <div className="panel-heading"><div><p className="section-kicker">Faculty entry</p><h3>Add Lecture / Practical</h3></div><span>All fields marked * are required</span></div>
+          <div className="panel-heading"><div><p className="section-kicker">Faculty entry</p><h3>{editingId?"Edit Attendance Entry":"Add Lecture / Practical / Tutorial"}</h3></div>{editingId?<Button type="button" size="sm" variant="outline" onClick={cancelEdit}><X/>Cancel</Button>:<span>All fields marked * are required</span>}</div>
           <form onSubmit={submit} className="entry-form">
-            <Field label="Date *"><Input type="date" required value={form.lectureDate} onChange={e=>set("lectureDate",e.target.value)} /></Field>
+            <Field label="Date *"><Input type="date" required value={form.lectureDate} onChange={e=>{const date=e.target.value;setForm(c=>({...c,lectureDate:date,periodTime:activeSlots(date,c.sessionType)[0]}));}} /></Field>
             <Field label="Faculty Name *"><Input required disabled={user.role==="staff"} placeholder="Enter full name" value={form.facultyName} onChange={e=>set("facultyName",e.target.value)} /></Field>
             <Field label="Department *" wide><NativeSelect required disabled={user.role==="staff"} className="w-full" value={form.department} onChange={e=>set("department",e.target.value)}>{departments.map(d=><NativeSelectOption key={d}>{d}</NativeSelectOption>)}</NativeSelect></Field>
             <Field label="Class *"><NativeSelect className="w-full" value={form.className} onChange={e=>set("className",e.target.value)}>{["FE","SE","TE","BE"].map(v=><NativeSelectOption key={v}>{v}</NativeSelectOption>)}</NativeSelect></Field>
             <Field label="Division *"><Input required value={form.division} onChange={e=>set("division",e.target.value)} /></Field>
             <Field label="Subject Name *" wide><Input required placeholder="e.g. Database Management Systems" value={form.subjectName} onChange={e=>set("subjectName",e.target.value)} /></Field>
-            <Field label="Session Type *"><NativeSelect className="w-full" value={form.sessionType} onChange={e=>setForm(current=>({...current,sessionType:e.target.value,periodTime:sessionSlots[e.target.value as keyof typeof sessionSlots][0]}))}><NativeSelectOption>Theory</NativeSelectOption><NativeSelectOption>Practical</NativeSelectOption></NativeSelect></Field>
-            <Field label="Period / Time *"><NativeSelect required className="w-full" value={form.periodTime} onChange={e=>set("periodTime",e.target.value)}>{sessionSlots[form.sessionType as keyof typeof sessionSlots].map(slot=><NativeSelectOption key={slot}>{slot}</NativeSelectOption>)}</NativeSelect></Field>
+            <Field label="Session Type *"><NativeSelect className="w-full" value={form.sessionType} onChange={e=>{const type=e.target.value;setForm(current=>({...current,sessionType:type,periodTime:activeSlots(current.lectureDate,type)[0]}));}}><NativeSelectOption>Theory</NativeSelectOption><NativeSelectOption>Practical</NativeSelectOption><NativeSelectOption>Tutorial</NativeSelectOption></NativeSelect></Field>
+            <Field label="Period / Time *"><NativeSelect required className="w-full" value={form.periodTime} onChange={e=>set("periodTime",e.target.value)}>{activeSlots(form.lectureDate,form.sessionType).map(slot=><NativeSelectOption key={slot}>{slot}</NativeSelectOption>)}</NativeSelect></Field>
             <Field label="Total Students *"><Input type="number" min="1" required placeholder="60" value={form.totalStudents} onChange={e=>set("totalStudents",e.target.value)} /></Field>
             <Field label="Present Students *"><Input type="number" min="0" required placeholder="52" value={form.presentStudents} onChange={e=>set("presentStudents",e.target.value)} /></Field>
             <Field label="Remarks" wide><Textarea placeholder="Optional note" rows={2} value={form.remarks} onChange={e=>set("remarks",e.target.value)} /></Field>
             {notice && <div className={`notice ${notice.kind}`} role="status">{notice.text}</div>}
-            <Button size="lg" className="submit-button" disabled={saving}>{saving ? <Loader2 className="animate-spin"/> : <Save/>}{saving ? "Saving…" : "Submit Attendance"}</Button>
+            <Button size="lg" className="submit-button" disabled={saving}>{saving ? <Loader2 className="animate-spin"/> : <Save/>}{saving ? "Saving…" : editingId?"Update Attendance":"Submit Attendance"}</Button>
           </form>
         </section>
 
@@ -249,13 +271,13 @@ export default function Home() {
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Date</th><th>Faculty & Subject</th><th>Class</th><th>Session</th><th>Attendance</th></tr></thead>
+              <thead><tr><th>Date</th><th>Faculty & Subject</th><th>Class</th><th>Session</th><th>Attendance</th><th>Actions</th></tr></thead>
               <tbody>
-                {loading ? <tr><td colSpan={5} className="empty"><Loader2 className="animate-spin"/> Loading records…</td></tr> :
+                {loading ? <tr><td colSpan={6} className="empty"><Loader2 className="animate-spin"/> Loading records…</td></tr> :
                 filtered.length ? filtered.map(e => {
                   const pct = Math.round(e.presentStudents/e.totalStudents*100);
-                  return <tr key={e.id}><td><strong>{new Date(e.lectureDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</strong><small>{e.department}</small></td><td><strong>{e.facultyName}</strong><small>{e.subjectName}</small></td><td><strong>{e.className} · Div {e.division}</strong><small>{e.periodTime}</small></td><td><span className={`session ${e.sessionType.toLowerCase()}`}>{e.sessionType}</span></td><td><strong>{e.presentStudents}/{e.totalStudents}</strong><small className={pct < 75 ? "low" : "good"}>{pct}% present</small></td></tr>;
-                }) : <tr><td colSpan={5} className="empty"><BookOpenCheck/>No attendance records found.<small>Submit the first lecture entry using the form.</small></td></tr>}
+                  return <tr key={e.id}><td><strong>{new Date(e.lectureDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</strong><small>{e.department}</small></td><td><strong>{e.facultyName}</strong><small>{e.subjectName}</small></td><td><strong>{e.className} · Div {e.division}</strong><small>{e.periodTime}</small></td><td><span className={`session ${e.sessionType.toLowerCase()}`}>{e.sessionType}</span></td><td><strong>{e.presentStudents}/{e.totalStudents}</strong><small className={pct < 75 ? "low" : "good"}>{pct}% present</small></td><td><div className="row-actions"><Button size="icon-sm" variant="outline" title="Edit" onClick={()=>startEdit(e)}><Pencil/></Button><Button size="icon-sm" variant="outline" title="Delete" onClick={()=>deleteEntry(e.id)}><Trash2/></Button></div></td></tr>;
+                }) : <tr><td colSpan={6} className="empty"><BookOpenCheck/>No attendance records found.<small>Submit the first attendance entry using the form.</small></td></tr>}
               </tbody>
             </table>
           </div>
