@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, BookOpenCheck, CalendarDays, Download, Loader2, LogOut, Pencil, RefreshCw, Save, Search, ShieldCheck, Trash2, Trophy, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,9 +13,9 @@ const departments = [
 ];
 
 const sessionSlots = {
-  Theory: ["9:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
-  Practical: ["9:00 AM - 11:00 AM", "11:15 AM - 1:15 PM", "2:00 PM - 4:00 PM"],
-  Tutorial: ["9:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
+  Theory: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
+  Practical: ["8:00 AM - 10:00 AM", "10:15 AM - 12:15 PM", "2:00 PM - 4:00 PM"],
+  Tutorial: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM", "12:15 PM - 1:15 PM", "2:00 PM - 3:00 PM", "3:00 PM - 4:00 PM"],
 };
 const saturdaySlots = {
   Theory: ["8:00 AM - 9:00 AM", "9:00 AM - 10:00 AM", "10:15 AM - 11:15 AM", "11:15 AM - 12:15 PM"],
@@ -30,7 +30,7 @@ type Entry = {
 };
 type User = { id:number; name:string; email:string; department:string; role:"admin"|"staff"; status:string };
 type StaffUser = { id:number; name:string; email:string; department:string; status:string };
-type LeaderboardData = { date:string; entries:Entry[]; departments:{department:string;sessions:number;present:number;total:number;percentage:number}[] };
+type LeaderboardData = { fromDate:string; toDate:string; entries:Entry[] };
 
 type ModelContext = { registerTool: (tool: Record<string, unknown>, options?: { signal?: AbortSignal }) => void | Promise<void> };
 
@@ -58,7 +58,8 @@ export default function Home() {
   const [recoveryNotice, setRecoveryNotice] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardData>({date:localDate(),entries:[],departments:[]});
+  const [leaderboard, setLeaderboard] = useState<LeaderboardData>({fromDate:localDate(),toDate:localDate(),entries:[]});
+  const entryPanelRef = useRef<HTMLElement>(null);
   const [editingId, setEditingId] = useState<number|null>(null);
   const [form, setForm] = useState(initialForm);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -194,7 +195,7 @@ export default function Home() {
 
   const set = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const activeSlots=(date:string,type:string)=>new Date(date+"T00:00:00").getDay()===6?saturdaySlots[type as keyof typeof saturdaySlots]:sessionSlots[type as keyof typeof sessionSlots];
-  function startEdit(entry:Entry){setEditingId(entry.id);setForm({lectureDate:entry.lectureDate,facultyName:entry.facultyName,department:entry.department,className:entry.className,division:entry.division,subjectName:entry.subjectName,sessionType:entry.sessionType,periodTime:entry.periodTime,totalStudents:String(entry.totalStudents),presentStudents:String(entry.presentStudents),remarks:entry.remarks});window.scrollTo({top:420,behavior:"smooth"});}
+  function startEdit(entry:Entry){setEditingId(entry.id);setForm({lectureDate:entry.lectureDate,facultyName:entry.facultyName,department:entry.department,className:entry.className,division:entry.division,subjectName:entry.subjectName,sessionType:entry.sessionType,periodTime:entry.periodTime,totalStudents:String(entry.totalStudents),presentStudents:String(entry.presentStudents),remarks:entry.remarks});requestAnimationFrame(()=>entryPanelRef.current?.scrollIntoView({behavior:"smooth",block:"start"}));}
   function cancelEdit(){setEditingId(null);setForm({...initialForm,facultyName:user?.name||"",department:user?.department||departments[0]});setNotice(null);}
   async function deleteEntry(id:number){if(!window.confirm("Are you sure you want to delete this attendance entry?"))return;const r=await fetch(`/api/attendance/${id}`,{method:"DELETE"});const data=await r.json();if(!r.ok){setNotice({kind:"error",text:data.error||"Delete failed."});return;}await Promise.all([loadEntries(),loadLeaderboard()]);}
 
@@ -239,9 +240,8 @@ export default function Home() {
       </section>
 
       <section className="leaderboard-shell">
-        <div className="leaderboard-title"><div><p className="section-kicker">Live daily performance</p><h3><Trophy/> Today&apos;s Attendance Leaderboard</h3></div><span>{new Date(leaderboard.date+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"})} · Auto-refresh</span></div>
-        <div className="leaderboard-grid">{(["Theory","Practical","Tutorial"] as const).map(type=><div className="leader-card" key={type}><h4>{type} Leaderboard</h4><div className="leader-table"><table><thead><tr><th>#</th><th>Faculty / Department</th><th>Session</th><th>Attendance</th></tr></thead><tbody>{leaderboard.entries.filter(e=>e.sessionType===type).map((e,i)=><tr key={e.id}><td><span className={`rank rank-${i+1}`}>{i+1}</span></td><td><strong>{e.facultyName}</strong><small>{e.department} · {e.className}-{e.division}</small></td><td><strong>{e.subjectName}</strong><small>{e.periodTime}</small></td><td><strong>{Math.round(e.presentStudents/e.totalStudents*100)}%</strong><small>{e.presentStudents}/{e.totalStudents}</small></td></tr>)}{!leaderboard.entries.some(e=>e.sessionType===type)&&<tr><td colSpan={4} className="leader-empty">No {type.toLowerCase()} entries today.</td></tr>}</tbody></table></div></div>)}</div>
-        <div className="department-board"><h4>Today&apos;s Department Attendance Ranking</h4><div className="department-row header"><span>Rank</span><span>Department</span><span>Sessions</span><span>Present / Total</span><span>Attendance</span></div>{leaderboard.departments.map((d,i)=><div className="department-row" key={d.department}><span><b className={`rank rank-${i+1}`}>{i+1}</b></span><strong>{d.department}</strong><span>{d.sessions}</span><span>{d.present}/{d.total}</span><strong>{d.percentage}%</strong></div>)}{!leaderboard.departments.length&&<p className="leader-empty">Department ranking will appear after today&apos;s first entry.</p>}</div>
+        <div className="leaderboard-title"><div><p className="section-kicker">Live performance · latest two days</p><h3><Trophy/> Attendance Leaderboard</h3></div><span>{new Date(leaderboard.fromDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short"})} – {new Date(leaderboard.toDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} · Auto-refresh</span></div>
+        <div className="leaderboard-grid">{(["Theory","Practical","Tutorial"] as const).map(type=><div className="leader-card" key={type}><h4>{type} Leaderboard</h4><div className="leader-table"><table><thead><tr><th>#</th><th>Faculty / Date · Department · Class</th><th>Session</th><th>Attendance</th>{user.role==="admin"&&<th>Action</th>}</tr></thead><tbody>{leaderboard.entries.filter(e=>e.sessionType===type).map((e,i)=><tr key={e.id}><td><span className={`rank rank-${i+1}`}>{i+1}</span></td><td><strong>{e.facultyName}</strong><small>{new Date(e.lectureDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} · {e.department} · {e.className}-{e.division}</small></td><td><strong>{e.subjectName}</strong><small>{e.periodTime}</small></td><td><strong>{Math.round(e.presentStudents/e.totalStudents*100)}%</strong><small>{e.presentStudents}/{e.totalStudents}</small></td>{user.role==="admin"&&<td><Button size="icon-sm" variant="outline" title="Delete leaderboard entry" onClick={()=>deleteEntry(e.id)}><Trash2/></Button></td>}</tr>)}{!leaderboard.entries.some(e=>e.sessionType===type)&&<tr><td colSpan={user.role==="admin"?5:4} className="leader-empty">No {type.toLowerCase()} entries in the latest two days.</td></tr>}</tbody></table></div></div>)}</div>
       </section>
 
       {user.role==="admin"&&<section className="panel approvals-panel"><div className="panel-heading"><div><p className="section-kicker">Access control</p><h3>Faculty Account Approvals</h3></div><span>{staffUsers.filter(s=>s.status==="pending").length} pending</span></div>
@@ -249,7 +249,7 @@ export default function Home() {
       </section>}
 
       <div className="workspace-grid">
-        <section className="panel entry-panel">
+        <section className="panel entry-panel" ref={entryPanelRef}>
           <div className="panel-heading"><div><p className="section-kicker">Faculty entry</p><h3>{editingId?"Edit Attendance Entry":"Add Lecture / Practical / Tutorial"}</h3></div>{editingId?<Button type="button" size="sm" variant="outline" onClick={cancelEdit}><X/>Cancel</Button>:<span>All fields marked * are required</span>}</div>
           <form onSubmit={submit} className="entry-form">
             <Field label="Date *"><Input type="date" required value={form.lectureDate} onChange={e=>{const date=e.target.value;setForm(c=>({...c,lectureDate:date,periodTime:activeSlots(date,c.sessionType)[0]}));}} /></Field>
