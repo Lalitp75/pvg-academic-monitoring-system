@@ -52,9 +52,10 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState<"login"|"signup">("login");
-  const [authForm, setAuthForm] = useState({name:"",email:"",department:departments[0],password:""});
+  const [authMode, setAuthMode] = useState<"login"|"signup"|"forgot">("login");
+  const [authForm, setAuthForm] = useState({name:"",email:"",department:departments[0],password:"",recoveryCode:""});
   const [authMessage, setAuthMessage] = useState("");
+  const [recoveryNotice, setRecoveryNotice] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardData>({date:localDate(),entries:[],departments:[]});
@@ -97,9 +98,12 @@ export default function Home() {
   async function authenticate(event: FormEvent) {
     event.preventDefault(); setAuthMessage(""); setAuthSubmitting(true);
     try {
-      const response=await fetch(`/api/auth/${authMode}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(authForm)});
+      const endpoint=authMode==="forgot"?"reset-password":authMode;
+      const response=await fetch(`/api/auth/${endpoint}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(authForm)});
       const data=await response.json().catch(()=>({error:"The server returned an invalid response."}));
       if(!response.ok){setAuthMessage(data.error||"Unable to continue.");return;}
+      if(data.recoveryCode)setRecoveryNotice(data.recoveryCode);
+      if(authMode==="forgot"){setAuthMessage(data.message);setAuthMode("login");setAuthForm({...authForm,password:"",recoveryCode:""});return;}
       if(data.status==="pending"){setAuthMessage(data.message);setAuthMode("login");return;}
       const me=await fetch("/api/auth/me",{cache:"no-store"});
       if(!me.ok){setAuthMessage("Account was created, but automatic login failed. Please use Sign in.");setAuthMode("login");return;}
@@ -110,6 +114,7 @@ export default function Home() {
 
   async function logout(){await fetch("/api/auth/logout",{method:"POST"});setUser(null);setEntries([]);}
   async function updateStaff(id:number,status:"approved"|"inactive"){await fetch("/api/admin/users",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status})});await loadStaff();}
+  async function generateStaffRecoveryCode(id:number,name:string){if(!window.confirm(`Generate a new Recovery Code for ${name}? The previous code will stop working.`))return;const r=await fetch("/api/admin/users",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,action:"generateRecoveryCode"})});const data=await r.json();if(r.ok)window.alert(`New Recovery Code for ${name}:\n\n${data.recoveryCode}\n\nCopy and share it securely. This code will not be shown again.`);else window.alert(data.error||"Unable to generate code.");}
 
   useEffect(() => {
     const context = (document as Document & { modelContext?: ModelContext }).modelContext;
@@ -198,16 +203,19 @@ export default function Home() {
   if(authLoading) return <main className="auth-page"><Loader2 className="animate-spin"/> Loading secure portal…</main>;
   if(!user) return <main className="auth-page"><section className="auth-card">
     <img className="auth-logo" src="/pvgcoenashik-logo.png" alt="PVGCOE & SSDIOM"/><p className="eyebrow">Secure Academic Portal</p><h1>PVG&apos;s Academic Monitoring System</h1>
-    <p>{authMode==="login"?"Sign in to record and review academic sessions.":"Create a faculty account. Admin approval is required."}</p>
+    <p>{authMode==="login"?"Sign in to record and review academic sessions.":authMode==="signup"?"Create a faculty account. Admin approval is required.":"Enter your registered email, Recovery Code and a new password."}</p>
     <form onSubmit={authenticate} className="auth-form">
       {authMode==="signup"&&<><Label>Full Name</Label><Input required value={authForm.name} onChange={e=>setAuthForm({...authForm,name:e.target.value})}/></>}
       <Label>Official Email</Label><Input type="email" required value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})}/>
       {authMode==="signup"&&<><Label>Department</Label><NativeSelect className="w-full" value={authForm.department} onChange={e=>setAuthForm({...authForm,department:e.target.value})}>{departments.map(d=><NativeSelectOption key={d}>{d}</NativeSelectOption>)}</NativeSelect></>}
-      <Label>Password</Label><Input type="password" minLength={8} required value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})}/>
+      {authMode==="forgot"&&<><Label>Recovery Code</Label><Input required placeholder="PVG-XXXX-XXXX-XXXX" value={authForm.recoveryCode} onChange={e=>setAuthForm({...authForm,recoveryCode:e.target.value.toUpperCase()})}/></>}
+      <Label>{authMode==="forgot"?"New Password":"Password"}</Label><Input type="password" minLength={8} required value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})}/>
       {authMessage&&<div className="notice error">{authMessage}</div>}
-      <Button size="lg" type="submit" disabled={authSubmitting}>{authSubmitting?<Loader2 className="animate-spin"/>:<ShieldCheck/>}{authSubmitting?"Please wait…":authMode==="login"?"Secure Login":"Submit Registration"}</Button>
+      {recoveryNotice&&<div className="recovery-notice"><strong>Save your Recovery Code</strong><code>{recoveryNotice}</code><small>It is required if you forget your password.</small><Button type="button" variant="outline" onClick={()=>navigator.clipboard.writeText(recoveryNotice)}>Copy Code</Button></div>}
+      <Button size="lg" type="submit" disabled={authSubmitting}>{authSubmitting?<Loader2 className="animate-spin"/>:<ShieldCheck/>}{authSubmitting?"Please wait…":authMode==="login"?"Secure Login":authMode==="signup"?"Submit Registration":"Reset Password"}</Button>
     </form>
-    <button className="auth-switch" onClick={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthMessage("");}}>{authMode==="login"?"New faculty member? Create account":"Already registered? Sign in"}</button>
+    {authMode==="login"&&<><button className="auth-switch" onClick={()=>{setAuthMode("forgot");setAuthMessage("");setRecoveryNotice("");}}>Forgot Password?</button><button className="auth-switch compact" onClick={()=>{setAuthMode("signup");setAuthMessage("");setRecoveryNotice("");}}>New faculty member? Create account</button></>}
+    {authMode!=="login"&&<button className="auth-switch" onClick={()=>{setAuthMode("login");setAuthMessage("");setRecoveryNotice("");}}>Already registered? Sign in</button>}
     <small>Super Admin: hod_etc@pvgcoenashik.org</small>
   </section></main>;
 
@@ -237,7 +245,7 @@ export default function Home() {
       </section>
 
       {user.role==="admin"&&<section className="panel approvals-panel"><div className="panel-heading"><div><p className="section-kicker">Access control</p><h3>Faculty Account Approvals</h3></div><span>{staffUsers.filter(s=>s.status==="pending").length} pending</span></div>
-        <div className="approval-list">{staffUsers.length?staffUsers.map(s=><div className="approval-row" key={s.id}><div><strong>{s.name}</strong><small>{s.email} · {s.department}</small></div><span className={`account-status ${s.status}`}>{s.status}</span><div><Button size="sm" onClick={()=>updateStaff(s.id,"approved")}>Approve</Button><Button size="sm" variant="outline" onClick={()=>updateStaff(s.id,"inactive")}>Deactivate</Button></div></div>):<p className="empty">No faculty registrations yet.</p>}</div>
+        <div className="approval-list">{staffUsers.length?staffUsers.map(s=><div className="approval-row" key={s.id}><div><strong>{s.name}</strong><small>{s.email} · {s.department}</small></div><span className={`account-status ${s.status}`}>{s.status}</span><div><Button size="sm" onClick={()=>updateStaff(s.id,"approved")}>Approve</Button><Button size="sm" variant="outline" onClick={()=>generateStaffRecoveryCode(s.id,s.name)}>Recovery Code</Button><Button size="sm" variant="outline" onClick={()=>updateStaff(s.id,"inactive")}>Deactivate</Button></div></div>):<p className="empty">No faculty registrations yet.</p>}</div>
       </section>}
 
       <div className="workspace-grid">
