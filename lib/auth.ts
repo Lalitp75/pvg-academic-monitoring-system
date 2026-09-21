@@ -24,6 +24,15 @@ export async function verifyPassword(password: string, stored: string) {
   return diff === 0;
 }
 
+export function normalizeLoginPassword(password: string) {
+  const trimmed = password.trim();
+  if (!trimmed.toUpperCase().startsWith("AMS")) return password;
+  const compact = trimmed.toUpperCase().replace(/[‐‑‒–—−]/g, "-").replace(/\s+/g, "");
+  const raw = compact.replace(/[^A-Z0-9]/g, "");
+  if (raw.startsWith("AMS") && raw.length === 15) return `AMS-${raw.slice(3,7)}-${raw.slice(7,11)}-${raw.slice(11,15)}`;
+  return compact;
+}
+
 export async function hashToken(token: string) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))));
 }
@@ -43,9 +52,9 @@ export function createRecoveryCode() {
 }
 
 export function createTemporaryPassword() {
-  const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";const bytes=crypto.getRandomValues(new Uint8Array(8));
+  const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";const bytes=crypto.getRandomValues(new Uint8Array(12));
   const raw=Array.from(bytes,b=>chars[b%chars.length]).join("");
-  return `AMS-${raw.slice(0,4)}-${raw.slice(4,8)}`;
+  return `AMS-${raw.slice(0,4)}-${raw.slice(4,8)}-${raw.slice(8,12)}`;
 }
 
 export async function currentUser(request: NextRequest) {
