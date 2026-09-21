@@ -2,10 +2,10 @@ import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
-import { createRecoveryCode, hashPassword, hashToken } from "@/lib/auth";
+import { createRecoveryCode, hashPassword, hashToken, normalizeRecoveryCode } from "@/lib/auth";
 
 export async function POST(request:NextRequest){
- const body=await request.json();const email=String(body.email??"").trim().toLowerCase();const code=String(body.recoveryCode??"").trim().toUpperCase();const password=String(body.password??"");
+ const body=await request.json();const email=String(body.email??"").trim().toLowerCase();const code=normalizeRecoveryCode(String(body.recoveryCode??""));const password=String(body.password??"");
  if(password.length<8)return NextResponse.json({error:"New password must contain at least 8 characters."},{status:400});
  const [user]=await getDb().select().from(users).where(eq(users.email,email)).limit(1);
  if(!user)return NextResponse.json({error:"Invalid email or Recovery Code."},{status:400});
