@@ -42,6 +42,12 @@ export function createRecoveryCode() {
   return `PVG-${raw.slice(0,4)}-${raw.slice(4,8)}-${raw.slice(8,12)}`;
 }
 
+export function createTemporaryPassword() {
+  const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";const bytes=crypto.getRandomValues(new Uint8Array(8));
+  const raw=Array.from(bytes,b=>chars[b%chars.length]).join("");
+  return `AMS-${raw.slice(0,4)}-${raw.slice(4,8)}`;
+}
+
 export async function currentUser(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return null;
