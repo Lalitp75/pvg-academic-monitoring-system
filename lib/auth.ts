@@ -28,6 +28,14 @@ export async function hashToken(token: string) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))));
 }
 
+export function normalizeRecoveryCode(code: string) {
+  const compact = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (compact.startsWith("PVG") && compact.length === 15) {
+    return `PVG-${compact.slice(3,7)}-${compact.slice(7,11)}-${compact.slice(11,15)}`;
+  }
+  return code.trim().toUpperCase();
+}
+
 export function createRecoveryCode() {
   const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";const bytes=crypto.getRandomValues(new Uint8Array(12));
   const raw=Array.from(bytes,b=>chars[b%chars.length]).join("");
