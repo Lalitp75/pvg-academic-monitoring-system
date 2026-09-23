@@ -59,6 +59,7 @@ export default function Home() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
+  const [approvalQuery, setApprovalQuery] = useState("");
   const [leaderboard, setLeaderboard] = useState<LeaderboardData>({fromDate:localDate(),toDate:localDate(),entries:[]});
   const entryPanelRef = useRef<HTMLElement>(null);
   const [editingId, setEditingId] = useState<number|null>(null);
@@ -152,6 +153,11 @@ export default function Home() {
     if (!needle) return entries;
     return entries.filter((e) => [e.facultyName, e.subjectName, e.className, e.division, e.sessionType, e.batch||""].some(v => v.toLowerCase().includes(needle)));
   }, [entries, query]);
+  const filteredStaffUsers = useMemo(() => {
+    const needle=approvalQuery.trim().toLowerCase();
+    if(!needle)return staffUsers;
+    return staffUsers.filter(s=>[s.name,s.email,s.department,s.status].some(value=>value.toLowerCase().includes(needle)));
+  },[staffUsers,approvalQuery]);
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setNotice(null);
@@ -237,7 +243,7 @@ export default function Home() {
       </section>
 
       {user.role==="admin"&&<section className="panel approvals-panel"><div className="panel-heading approvals-heading"><div><p className="section-kicker">Access control</p><h3>Faculty Account Approvals</h3></div><div className="approvals-controls"><span>{staffUsers.filter(s=>s.status==="pending").length} pending</span><Button type="button" size="sm" variant="outline" onClick={()=>setApprovalsOpen(open=>!open)} aria-expanded={approvalsOpen}>{approvalsOpen?<><ChevronUp/>Minimize</>:<><ChevronDown/>View Approvals</>}</Button></div></div>
-        {approvalsOpen&&<div className="approval-list">{staffUsers.length?staffUsers.map(s=><div className="approval-row" key={s.id}><div><strong>{s.name}</strong><small>{s.email} · {s.department}</small></div><span className={`account-status ${s.status}`}>{s.status}</span><div><Button size="sm" onClick={()=>updateStaff(s.id,"approved")}>Approve</Button><Button size="sm" variant="outline" onClick={()=>generateStaffRecoveryCode(s.id,s.name)}>Recovery Code</Button><Button size="sm" variant="outline" onClick={()=>setTemporaryPassword(s.id,s.name)}>Reset Password</Button><Button size="sm" variant="outline" onClick={()=>updateStaff(s.id,"inactive")}>Deactivate</Button></div></div>):<p className="empty">No faculty registrations yet.</p>}</div>}
+        {approvalsOpen&&<><div className="approval-search"><Search/><Input aria-label="Search faculty accounts" placeholder="Search faculty name or email" value={approvalQuery} onChange={e=>setApprovalQuery(e.target.value)}/></div><div className="approval-list">{filteredStaffUsers.length?filteredStaffUsers.map(s=><div className="approval-row" key={s.id}><div><strong>{s.name}</strong><small>{s.email} · {s.department}</small></div><span className={`account-status ${s.status}`}>{s.status}</span><div><Button size="sm" onClick={()=>updateStaff(s.id,"approved")}>Approve</Button><Button size="sm" variant="outline" onClick={()=>generateStaffRecoveryCode(s.id,s.name)}>Recovery Code</Button><Button size="sm" variant="outline" onClick={()=>setTemporaryPassword(s.id,s.name)}>Reset Password</Button><Button size="sm" variant="outline" onClick={()=>updateStaff(s.id,"inactive")}>Deactivate</Button></div></div>):<p className="empty">{staffUsers.length?"No faculty account matches this search.":"No faculty registrations yet."}</p>}</div></>}
       </section>}
 
       <div className="workspace-grid">
