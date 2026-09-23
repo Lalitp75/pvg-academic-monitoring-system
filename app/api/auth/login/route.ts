@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
-import { createRecoveryCode, createSession, hashPassword, hashToken, normalizeLoginPassword, sessionCookie, verifyPassword } from "@/lib/auth";
+import { createRecoveryCode, createSession, hashPassword, hashToken, normalizeLoginPassword, normalizePasswordInput, sessionCookie, verifyPassword } from "@/lib/auth";
 
 const AUTH_RELEASE = "2026-09-22-final";
 
@@ -14,10 +14,12 @@ function sameHash(actual: string, expected: string | null) {
 }
 
 export async function POST(request: NextRequest) {
-  const body = await request.json(); const email=String(body.email??"").trim().toLowerCase(); const password=normalizeLoginPassword(String(body.password??""));
+  const body = await request.json(); const email=String(body.email??"").trim().toLowerCase(); const enteredPassword=String(body.password??""); const password=normalizeLoginPassword(enteredPassword);
   const [user] = await getDb().select().from(users).where(eq(users.email,email)).limit(1);
   if (!user) return NextResponse.json({error:"Invalid email or password.",release:AUTH_RELEASE},{status:401});
   let passwordValid=await verifyPassword(password,user.passwordHash);
+  const canonicalPassword=normalizePasswordInput(enteredPassword);
+  if(!passwordValid&&canonicalPassword!==password) passwordValid=await verifyPassword(canonicalPassword,user.passwordHash);
   let recoveryCode: string | undefined;
   if(!passwordValid&&password.startsWith("AMS-")&&sameHash(await hashToken(password),user.recoveryCodeHash)){
     passwordValid=true;

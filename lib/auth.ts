@@ -24,8 +24,12 @@ export async function verifyPassword(password: string, stored: string) {
   return diff === 0;
 }
 
+export function normalizePasswordInput(password: string) {
+  return password.normalize("NFKC").trim();
+}
+
 export function normalizeLoginPassword(password: string) {
-  const trimmed = password.trim();
+  const trimmed = normalizePasswordInput(password);
   if (!trimmed.toUpperCase().startsWith("AMS")) return password;
   const compact = trimmed.toUpperCase().replace(/[‐‑‒–—−]/g, "-").replace(/\s+/g, "");
   const raw = compact.replace(/[^A-Z0-9]/g, "");
