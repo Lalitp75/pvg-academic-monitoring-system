@@ -26,7 +26,7 @@ const saturdaySlots = {
 type Entry = {
   id: number; lectureDate: string; facultyName: string; department: string;
   className: string; division: string; subjectName: string; sessionType: string;
-  periodTime: string; totalStudents: number; presentStudents: number; remarks: string;
+  batch: string; periodTime: string; totalStudents: number; presentStudents: number; remarks: string;
 };
 type User = { id:number; name:string; email:string; department:string; role:"admin"|"staff"; status:string };
 type StaffUser = { id:number; name:string; email:string; department:string; status:string };
@@ -42,7 +42,7 @@ const localDate = () => {
 const initialForm = {
   lectureDate: localDate(), facultyName: "", department: departments[0], className: "FE",
   division: "A", subjectName: "", sessionType: "Theory", periodTime: sessionSlots.Theory[0],
-  totalStudents: "", presentStudents: "", remarks: "",
+  batch: "", totalStudents: "", presentStudents: "", remarks: "",
 };
 
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
@@ -128,7 +128,7 @@ export default function Home() {
       properties: {
         lectureDate:{type:"string"}, facultyName:{type:"string"}, department:{type:"string"},
         className:{type:"string",enum:["FE","SE","TE","BE"]}, division:{type:"string"},
-        subjectName:{type:"string"}, sessionType:{type:"string",enum:["Theory","Practical"]},
+        subjectName:{type:"string"}, sessionType:{type:"string",enum:["Theory","Practical"]}, batch:{type:"string"},
         periodTime:{type:"string"}, totalStudents:{type:"integer",minimum:1},
         presentStudents:{type:"integer",minimum:0}, remarks:{type:"string"},
       },
@@ -150,12 +150,13 @@ export default function Home() {
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return entries;
-    return entries.filter((e) => [e.facultyName, e.subjectName, e.className, e.division, e.sessionType].some(v => v.toLowerCase().includes(needle)));
+    return entries.filter((e) => [e.facultyName, e.subjectName, e.className, e.division, e.sessionType, e.batch||""].some(v => v.toLowerCase().includes(needle)));
   }, [entries, query]);
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setNotice(null);
     const total = Number(form.totalStudents), present = Number(form.presentStudents);
+    if (form.sessionType === "Practical" && !form.batch.trim()) { setNotice({ kind: "error", text: "Batch is required for Practical sessions." }); return; }
     if (present > total) { setNotice({ kind: "error", text: "Present students cannot be more than total students." }); return; }
     setSaving(true);
     try {
@@ -171,7 +172,7 @@ export default function Home() {
   }
 
   function exportExcel() {
-    const headers = ["Sr. No.","Date","Faculty Name","Department","Class","Division","Subject","Session Type","Time Slot","Total Students","Present","Absent","Attendance %","Remarks"];
+    const headers = ["Sr. No.","Date","Faculty Name","Department","Class","Division","Batch","Subject","Session Type","Time Slot","Total Students","Present","Absent","Attendance %","Remarks"];
     const shortDepartment: Record<string,string> = {
       "Computer Engineering":"CE", "Information Technology":"IT", "Artificial Intelligence & Data Science":"AI&DS",
       "Electronics & Telecommunication":"E&TC", "Mechanical Engineering":"Mechanical", "First Year Engineering":"First Year",
@@ -179,19 +180,19 @@ export default function Home() {
     const safe = (value: string | number) => String(value).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
     const reportPeriod = from || to ? `${from || "Beginning"} to ${to || "Today"}` : "All Records";
     const tableRows = filtered.map((e,i) => {
-      const values = [i+1,e.lectureDate,e.facultyName,shortDepartment[e.department] || e.department,e.className,e.division,e.subjectName,e.sessionType,e.periodTime,e.totalStudents,e.presentStudents,e.totalStudents-e.presentStudents,`${Math.round(e.presentStudents/e.totalStudents*100)}%`,e.remarks];
+      const values = [i+1,e.lectureDate,e.facultyName,shortDepartment[e.department] || e.department,e.className,e.division,e.batch||"",e.subjectName,e.sessionType,e.periodTime,e.totalStudents,e.presentStudents,e.totalStudents-e.presentStudents,`${Math.round(e.presentStudents/e.totalStudents*100)}%`,e.remarks];
       return `<tr>${values.map(v=>`<td>${safe(v)}</td>`).join("")}</tr>`;
     }).join("");
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
       body{font-family:Calibri,Arial,sans-serif} table{border-collapse:collapse;width:100%} th,td{border:1px solid #000;padding:7px;text-align:center;vertical-align:middle} th{background:#1f4e78;color:#fff;font-weight:bold} .title{background:#17365d;color:#fff;font-size:18px;font-weight:bold;height:34px}.subtitle{background:#d9eaf7;font-weight:bold}.left{text-align:left}
-    </style></head><body><table><tr><th class="title" colspan="14">PVGCOE &amp; SSDIOM, Nashik</th></tr><tr><th class="subtitle" colspan="14">Lecture &amp; Practical Attendance Report — ${safe(reportPeriod)}</th></tr><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr>${tableRows}</table></body></html>`;
+    </style></head><body><table><tr><th class="title" colspan="15">PVGCOE &amp; SSDIOM, Nashik</th></tr><tr><th class="subtitle" colspan="15">Lecture &amp; Practical Attendance Report — ${safe(reportPeriod)}</th></tr><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr>${tableRows}</table></body></html>`;
     const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob(["\uFEFF",html],{type:"application/vnd.ms-excel;charset=utf-8"}));
     a.download=`lecture-attendance-${from || "all"}-${to || localDate()}.xls`; a.click(); URL.revokeObjectURL(a.href);
   }
 
   const set = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const activeSlots=(date:string,type:string)=>new Date(date+"T00:00:00").getDay()===6?saturdaySlots[type as keyof typeof saturdaySlots]:sessionSlots[type as keyof typeof sessionSlots];
-  function startEdit(entry:Entry){setEditingId(entry.id);setForm({lectureDate:entry.lectureDate,facultyName:entry.facultyName,department:entry.department,className:entry.className,division:entry.division,subjectName:entry.subjectName,sessionType:entry.sessionType,periodTime:entry.periodTime,totalStudents:String(entry.totalStudents),presentStudents:String(entry.presentStudents),remarks:entry.remarks});requestAnimationFrame(()=>entryPanelRef.current?.scrollIntoView({behavior:"smooth",block:"start"}));}
+  function startEdit(entry:Entry){setEditingId(entry.id);setForm({lectureDate:entry.lectureDate,facultyName:entry.facultyName,department:entry.department,className:entry.className,division:entry.division,subjectName:entry.subjectName,sessionType:entry.sessionType,batch:entry.batch||"",periodTime:entry.periodTime,totalStudents:String(entry.totalStudents),presentStudents:String(entry.presentStudents),remarks:entry.remarks});requestAnimationFrame(()=>entryPanelRef.current?.scrollIntoView({behavior:"smooth",block:"start"}));}
   function cancelEdit(){setEditingId(null);setForm({...initialForm,facultyName:user?.name||"",department:user?.department||departments[0]});setNotice(null);}
   async function deleteEntry(id:number){if(!window.confirm("Are you sure you want to delete this attendance entry?"))return;const r=await fetch(`/api/attendance/${id}`,{method:"DELETE"});const data=await r.json();if(!r.ok){setNotice({kind:"error",text:data.error||"Delete failed."});return;}await Promise.all([loadEntries(),loadLeaderboard()]);}
   async function hideLeaderboardEntry(id:number){if(!window.confirm("Remove this entry only from the leaderboard? The original attendance record and Excel data will remain safe."))return;const r=await fetch(`/api/leaderboard?id=${id}`,{method:"DELETE"});const data=await r.json();if(!r.ok){window.alert(data.error||"Unable to remove the leaderboard entry.");return;}await loadLeaderboard();}
@@ -232,7 +233,7 @@ export default function Home() {
 
       <section className="leaderboard-shell">
         <div className="leaderboard-title"><div><p className="section-kicker">Live performance · latest two days</p><h3><Trophy/> Attendance Leaderboard</h3></div><span>{new Date(leaderboard.fromDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short"})} – {new Date(leaderboard.toDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} · Auto-refresh</span></div>
-        <div className="leaderboard-grid">{(["Theory","Practical"] as const).map(type=><div className="leader-card" key={type}><h4>{type} Leaderboard</h4><div className="leader-table"><table><thead><tr><th>#</th><th>Faculty / Date · Department · Class</th><th>Session</th><th>Attendance</th>{user.role==="admin"&&<th>Action</th>}</tr></thead><tbody>{leaderboard.entries.filter(e=>e.sessionType===type).map((e,i)=><tr key={e.id}><td><span className={`rank rank-${i+1}`}>{i+1}</span></td><td><strong>{e.facultyName}</strong><small>{new Date(e.lectureDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} · {e.department} · {e.className}-{e.division}</small></td><td><strong>{e.subjectName}</strong><small>{e.periodTime}</small></td><td><strong>{Math.round(e.presentStudents/e.totalStudents*100)}%</strong><small>{e.presentStudents}/{e.totalStudents}</small></td>{user.role==="admin"&&<td><Button size="icon-sm" variant="outline" title="Remove only from leaderboard" onClick={()=>hideLeaderboardEntry(e.id)}><Trash2/></Button></td>}</tr>)}{!leaderboard.entries.some(e=>e.sessionType===type)&&<tr><td colSpan={user.role==="admin"?5:4} className="leader-empty">No {type.toLowerCase()} entries in the latest two days.</td></tr>}</tbody></table></div></div>)}</div>
+        <div className="leaderboard-grid">{(["Theory","Practical"] as const).map(type=><div className="leader-card" key={type}><h4>{type} Leaderboard</h4><div className="leader-table"><table><thead><tr><th>#</th><th>Faculty / Date · Department · Class</th><th>Session</th><th>Attendance</th>{user.role==="admin"&&<th>Action</th>}</tr></thead><tbody>{leaderboard.entries.filter(e=>e.sessionType===type).map((e,i)=><tr key={e.id}><td><span className={`rank rank-${i+1}`}>{i+1}</span></td><td><strong>{e.facultyName}</strong><small>{new Date(e.lectureDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} · {e.department} · {e.className}-{e.division}{type==="Practical"&&e.batch?` · Batch ${e.batch}`:""}</small></td><td><strong>{e.subjectName}</strong><small>{e.periodTime}</small></td><td><strong>{Math.round(e.presentStudents/e.totalStudents*100)}%</strong><small>{e.presentStudents}/{e.totalStudents}</small></td>{user.role==="admin"&&<td><Button size="icon-sm" variant="outline" title="Remove only from leaderboard" onClick={()=>hideLeaderboardEntry(e.id)}><Trash2/></Button></td>}</tr>)}{!leaderboard.entries.some(e=>e.sessionType===type)&&<tr><td colSpan={user.role==="admin"?5:4} className="leader-empty">No {type.toLowerCase()} entries in the latest two days.</td></tr>}</tbody></table></div></div>)}</div>
       </section>
 
       {user.role==="admin"&&<section className="panel approvals-panel"><div className="panel-heading approvals-heading"><div><p className="section-kicker">Access control</p><h3>Faculty Account Approvals</h3></div><div className="approvals-controls"><span>{staffUsers.filter(s=>s.status==="pending").length} pending</span><Button type="button" size="sm" variant="outline" onClick={()=>setApprovalsOpen(open=>!open)} aria-expanded={approvalsOpen}>{approvalsOpen?<><ChevronUp/>Minimize</>:<><ChevronDown/>View Approvals</>}</Button></div></div>
@@ -249,7 +250,8 @@ export default function Home() {
             <Field label="Class *"><NativeSelect className="w-full" value={form.className} onChange={e=>set("className",e.target.value)}>{["FE","SE","TE","BE"].map(v=><NativeSelectOption key={v}>{v}</NativeSelectOption>)}</NativeSelect></Field>
             <Field label="Division *"><NativeSelect required className="w-full" value={form.division} onChange={e=>set("division",e.target.value)}>{["A","B","C","D","E","F","G","H","N.A"].map(v=><NativeSelectOption key={v}>{v}</NativeSelectOption>)}</NativeSelect></Field>
             <Field label="Subject Name *" wide><Input required placeholder="e.g. Database Management Systems" value={form.subjectName} onChange={e=>set("subjectName",e.target.value)} /></Field>
-            <Field label="Session Type *"><NativeSelect className="w-full" value={form.sessionType} onChange={e=>{const type=e.target.value;setForm(current=>({...current,sessionType:type,periodTime:activeSlots(current.lectureDate,type)[0]}));}}><NativeSelectOption>Theory</NativeSelectOption><NativeSelectOption>Practical</NativeSelectOption><NativeSelectOption>Tutorial</NativeSelectOption></NativeSelect></Field>
+            <Field label="Session Type *"><NativeSelect className="w-full" value={form.sessionType} onChange={e=>{const type=e.target.value;setForm(current=>({...current,sessionType:type,batch:type==="Practical"?current.batch:"",periodTime:activeSlots(current.lectureDate,type)[0]}));}}><NativeSelectOption>Theory</NativeSelectOption><NativeSelectOption>Practical</NativeSelectOption><NativeSelectOption>Tutorial</NativeSelectOption></NativeSelect></Field>
+            {form.sessionType==="Practical"&&<Field label="Batch *"><Input required placeholder="Enter batch, e.g. A1" value={form.batch} onChange={e=>set("batch",e.target.value)} /></Field>}
             <Field label="Period / Time *"><NativeSelect required className="w-full" value={form.periodTime} onChange={e=>set("periodTime",e.target.value)}>{activeSlots(form.lectureDate,form.sessionType).map(slot=><NativeSelectOption key={slot}>{slot}</NativeSelectOption>)}</NativeSelect></Field>
             <Field label="Total Students *"><Input type="number" min="1" required placeholder="60" value={form.totalStudents} onChange={e=>set("totalStudents",e.target.value)} /></Field>
             <Field label="Present Students *"><Input type="number" min="0" required placeholder="52" value={form.presentStudents} onChange={e=>set("presentStudents",e.target.value)} /></Field>
@@ -275,7 +277,7 @@ export default function Home() {
                 {loading ? <tr><td colSpan={6} className="empty"><Loader2 className="animate-spin"/> Loading records…</td></tr> :
                 filtered.length ? filtered.map(e => {
                   const pct = Math.round(e.presentStudents/e.totalStudents*100);
-                  return <tr key={e.id}><td><strong>{new Date(e.lectureDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</strong><small>{e.department}</small></td><td><strong>{e.facultyName}</strong><small>{e.subjectName}</small></td><td><strong>{e.className} · Div {e.division}</strong><small>{e.periodTime}</small></td><td><span className={`session ${e.sessionType.toLowerCase()}`}>{e.sessionType}</span></td><td><strong>{e.presentStudents}/{e.totalStudents}</strong><small className={pct < 75 ? "low" : "good"}>{pct}% present</small></td><td><div className="row-actions"><Button size="icon-sm" variant="outline" title="Edit" onClick={()=>startEdit(e)}><Pencil/></Button><Button size="icon-sm" variant="outline" title="Delete" onClick={()=>deleteEntry(e.id)}><Trash2/></Button></div></td></tr>;
+                  return <tr key={e.id}><td><strong>{new Date(e.lectureDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</strong><small>{e.department}</small></td><td><strong>{e.facultyName}</strong><small>{e.subjectName}</small></td><td><strong>{e.className} · Div {e.division}</strong><small>{e.sessionType==="Practical"&&e.batch?`Batch ${e.batch} · `:""}{e.periodTime}</small></td><td><span className={`session ${e.sessionType.toLowerCase()}`}>{e.sessionType}</span></td><td><strong>{e.presentStudents}/{e.totalStudents}</strong><small className={pct < 75 ? "low" : "good"}>{pct}% present</small></td><td><div className="row-actions"><Button size="icon-sm" variant="outline" title="Edit" onClick={()=>startEdit(e)}><Pencil/></Button><Button size="icon-sm" variant="outline" title="Delete" onClick={()=>deleteEntry(e.id)}><Trash2/></Button></div></td></tr>;
                 }) : <tr><td colSpan={6} className="empty"><BookOpenCheck/>No attendance records found.<small>Submit the first attendance entry using the form.</small></td></tr>}
               </tbody>
             </table>

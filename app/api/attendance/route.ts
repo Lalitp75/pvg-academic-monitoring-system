@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/db";
+import { ensureAttendanceBatchColumn, getDb } from "@/db";
 import { attendanceEntries, attendanceOwnership } from "@/db/schema";
 import { currentUser } from "@/lib/auth";
 
@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
   try {
     const user = await currentUser(request);
     if (!user) return NextResponse.json({ error: "Please log in." }, { status: 401 });
+    await ensureAttendanceBatchColumn();
     const params = request.nextUrl.searchParams;
     const filters = [];
     const department = params.get("department");
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
     const rows = await getDb().select({
       id: attendanceEntries.id, lectureDate: attendanceEntries.lectureDate, facultyName: attendanceEntries.facultyName,
       department: attendanceEntries.department, className: attendanceEntries.className, division: attendanceEntries.division,
-      subjectName: attendanceEntries.subjectName, sessionType: attendanceEntries.sessionType, periodTime: attendanceEntries.periodTime,
+      subjectName: attendanceEntries.subjectName, sessionType: attendanceEntries.sessionType, batch: attendanceEntries.batch, periodTime: attendanceEntries.periodTime,
       totalStudents: attendanceEntries.totalStudents, presentStudents: attendanceEntries.presentStudents, remarks: attendanceEntries.remarks,
       createdAt: attendanceEntries.createdAt,
     }).from(attendanceEntries).leftJoin(attendanceOwnership, eq(attendanceOwnership.entryId, attendanceEntries.id))
@@ -39,10 +40,15 @@ export async function POST(request: NextRequest) {
   try {
     const user = await currentUser(request);
     if (!user) return NextResponse.json({ error: "Please log in." }, { status: 401 });
+    await ensureAttendanceBatchColumn();
     const body = await request.json();
     const required = ["lectureDate", "facultyName", "department", "className", "division", "subjectName", "sessionType", "periodTime"];
     if (required.some((key) => !String(body[key] ?? "").trim())) {
       return NextResponse.json({ error: "Please complete all required fields." }, { status: 400 });
+    }
+    const batch = String(body.batch ?? "").trim();
+    if (body.sessionType === "Practical" && !batch) {
+      return NextResponse.json({ error: "Batch is required for Practical sessions." }, { status: 400 });
     }
     const totalStudents = Number(body.totalStudents);
     const presentStudents = Number(body.presentStudents);
@@ -57,6 +63,7 @@ export async function POST(request: NextRequest) {
       division: body.division.trim(),
       subjectName: body.subjectName.trim(),
       sessionType: body.sessionType,
+      batch: body.sessionType === "Practical" ? batch : "",
       periodTime: body.periodTime.trim(),
       totalStudents,
       presentStudents,

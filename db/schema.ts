@@ -33,6 +33,7 @@ export const attendanceEntries = sqliteTable(
     division: text("division").notNull(),
     subjectName: text("subject_name").notNull(),
     sessionType: text("session_type").notNull(),
+    batch: text("batch").notNull().default(""),
     periodTime: text("period_time").notNull(),
     totalStudents: integer("total_students").notNull(),
     presentStudents: integer("present_students").notNull(),
