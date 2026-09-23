@@ -4,7 +4,7 @@ import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { createRecoveryCode, createSession, hashPassword, hashToken, normalizeLoginPassword, normalizePasswordInput, sessionCookie, verifyPassword } from "@/lib/auth";
 
-const AUTH_RELEASE = "2026-09-22-final";
+const AUTH_RELEASE = "2026-09-23-one-time-verifier";
 
 function sameHash(actual: string, expected: string | null) {
   if (!expected || actual.length !== expected.length) return false;
@@ -21,6 +21,13 @@ export async function POST(request: NextRequest) {
   const canonicalPassword=normalizePasswordInput(enteredPassword);
   if(!passwordValid&&canonicalPassword!==password) passwordValid=await verifyPassword(canonicalPassword,user.passwordHash);
   let recoveryCode: string | undefined;
+  const recoveryParts=(user.recoveryCodeHash??"").split(":");
+  const oneTimeLoginHash=recoveryParts.length===2?recoveryParts[1]:null;
+  if(!passwordValid&&oneTimeLoginHash&&sameHash(await hashToken(canonicalPassword),oneTimeLoginHash)){
+    passwordValid=true;
+    recoveryCode=createRecoveryCode();
+    await getDb().update(users).set({passwordHash:await hashPassword(canonicalPassword),recoveryCodeHash:await hashToken(recoveryCode),resetAttempts:0,resetLockedUntil:null}).where(eq(users.id,user.id));
+  }
   if(!passwordValid&&password.startsWith("AMS-")&&sameHash(await hashToken(password),user.recoveryCodeHash)){
     passwordValid=true;
     recoveryCode=createRecoveryCode();
